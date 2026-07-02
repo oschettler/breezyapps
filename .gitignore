@@ -1,0 +1,11 @@
+# Downloaded Lua source
+apps/lua/lua-*/
+apps/lua/*.o
+apps/lua/liblua.a
+
+# Build outputs
+apps/*/dist/*.elf
+dist/
+
+# Object files
+*.o
