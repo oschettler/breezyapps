@@ -21,7 +21,7 @@ mkdir -p "$DIST"
 
 LIBGCC="$HOME/.espressif/tools/xtensa-esp-elf/esp-14.2.0_20241119/xtensa-esp-elf/lib/gcc/xtensa-esp-elf/14.2.0/esp32s3/libgcc.a"
 
-CFLAGS="-O2 -fPIC -DLUA_32BITS -I$LUA_DIR/src"
+CFLAGS="-O2 -fPIC -DLUA_32BITS -I$LUA_DIR/src -fno-common"
 
 # Build liblua.a from all Lua core + lib sources (exclude lua.c and luac.c — standalone mains)
 SRCS=$(ls "$LUA_DIR/src"/*.c | grep -v -e '/lua\.c$' -e '/luac\.c$')

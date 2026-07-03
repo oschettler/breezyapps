@@ -16,6 +16,10 @@
 #include "lualib.h"
 #include "lauxlib.h"
 
+/* Reference to luaopen_base to prevent it from being stripped from liblua.a */
+extern int luaopen_base(lua_State *L);
+static void *dummy_luaopen_base_ref = (void *)luaopen_base;
+
 /* ========== Firmware symbol forward declarations ========== */
 
 void     rgb_display_set_mode(int mode);
@@ -275,23 +279,51 @@ static void register_pico_api(lua_State *L) {
 
 /* ========== Simple REPL ========== */
 
+static int repl_readline(char *buf, int maxlen) {
+    int len = 0;
+    while (len < maxlen - 1) {
+        int c = getchar();
+        if (c == EOF || c < 0) {
+            vTaskDelay(1);
+            continue;
+        }
+        if (c == 3 || c == 4) return -1;
+        if (c == '\r' || c == '\n') {
+            putchar('\n');
+            fflush(stdout);
+            break;
+        }
+        if (c == 127 || c == 8) {
+            if (len > 0) {
+                len--;
+                putchar('\b'); putchar(' '); putchar('\b');
+                fflush(stdout);
+            }
+            continue;
+        }
+        buf[len++] = (char)c;
+        putchar(c);
+        fflush(stdout);
+    }
+    buf[len] = '\0';
+    return len;
+}
+
 static void run_repl(lua_State *L) {
     int rows, cols;
     vterm_get_size(&rows, &cols);
 
-    printf("Lua 5.4 REPL (%dx%d)  :quit to exit\n", cols, rows);
+    printf("Lua 5.4 REPL (%dx%d)  Ctrl+C to exit\n", cols, rows);
     fflush(stdout);
 
     char line[256];
+
     while (1) {
         printf("> ");
         fflush(stdout);
 
-        if (!fgets(line, sizeof(line), stdin)) break;
-
-        size_t len = strlen(line);
-        while (len > 0 && (line[len-1] == '\n' || line[len-1] == '\r'))
-            line[--len] = '\0';
+        int len = repl_readline(line, sizeof(line));
+        if (len < 0) break;
 
         if (strcmp(line, ":quit") == 0 || strcmp(line, "quit") == 0)
             break;
