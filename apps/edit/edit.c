@@ -159,6 +159,14 @@ static struct {
     char *cut_line;
 
     int screen_rows, screen_cols;
+
+    /* Redraw tracking: avoid repainting all visible rows on every keystroke.
+       dirty_row is the single file row whose content changed (-1 = none);
+       force_full_redraw is set whenever line count changes or the screen
+       was cleared out-of-band (e.g. running a script). Pure cursor motion
+       and same-row edits then only touch one line instead of the whole page. */
+    int dirty_row;
+    int force_full_redraw;
 } E;
 
 /* ========== Output buffering ========== */
@@ -441,15 +449,25 @@ static void draw_line(int file_row, int scr_y) {
 }
 
 static void draw_screen(void) {
+    int old_top = E.top_row, old_left = E.left_col;
     adjust_viewport();
+    int scrolled = (E.top_row != old_top || E.left_col != old_left);
+    int full = E.force_full_redraw || scrolled;
+
     out_str(ESC_CURSOR_HIDE);
-    out_str(ESC_HOME);
 
     int text_rows = E.screen_rows - 2;
 
-    for (int y = 0; y < text_rows; y++) {
-        draw_line(E.top_row + y, y);
+    if (full) {
+        for (int y = 0; y < text_rows; y++) {
+            draw_line(E.top_row + y, y);
+        }
+    } else if (E.dirty_row >= 0) {
+        int y = E.dirty_row - E.top_row;
+        if (y >= 0 && y < text_rows) draw_line(E.dirty_row, y);
     }
+    E.dirty_row = -1;
+    E.force_full_redraw = 0;
 
     /* Top status bar */
     out_goto(E.screen_rows - 2, 0);
@@ -507,6 +525,7 @@ static void insert_char(char c) {
     E.lines[E.cur_row] = nl;
     E.cur_col++;
     E.modified = 1;
+    E.dirty_row = E.cur_row;
 }
 
 static void delete_char_at(int col) {
@@ -515,6 +534,7 @@ static void delete_char_at(int col) {
     if (col < 0 || col >= len) return;
     memmove(line + col, line + col + 1, len - col);
     E.modified = 1;
+    E.dirty_row = E.cur_row;
 }
 
 static void backspace_char(void) {
@@ -534,6 +554,7 @@ static void backspace_char(void) {
         E.cur_row--;
         E.cur_col = prev_len;
         E.modified = 1;
+        E.force_full_redraw = 1;
     }
 }
 
@@ -546,6 +567,7 @@ static void insert_newline(void) {
     E.cur_row++;
     E.cur_col = 0;
     E.modified = 1;
+    E.force_full_redraw = 1;
 }
 
 static void cut_line(void) {
@@ -554,6 +576,7 @@ static void cut_line(void) {
     delete_line_at(E.cur_row);
     clamp_cursor();
     E.modified = 1;
+    E.force_full_redraw = 1;
     snprintf(E.status, sizeof(E.status), "Line cut");
 }
 
@@ -561,6 +584,7 @@ static void paste_line(void) {
     if (!E.cut_line) return;
     insert_line_at(E.cur_row, E.cut_line);
     E.modified = 1;
+    E.force_full_redraw = 1;
     snprintf(E.status, sizeof(E.status), "Line pasted");
 }
 
@@ -587,6 +611,7 @@ static void run_file(void) {
     out_str(ESC_CLEAR);
     out_str(ESC_HOME);
     out_flush();
+    E.force_full_redraw = 1;
     if (rc != 0) {
         snprintf(E.status, sizeof(E.status), "Run failed (rc=%d): %s", rc, E.filepath);
     } else {
@@ -676,6 +701,7 @@ case KEY_PAGE_DOWN: {
                 E.lines[E.cur_row] = nl;
                 delete_line_at(E.cur_row + 1);
                 E.modified = 1;
+                E.force_full_redraw = 1;
             }
             break;
         case KEY_ENTER:
@@ -716,6 +742,8 @@ int app_main(int argc, char **argv) {
 
     memset(&E, 0, sizeof(E));
     E.running = 1;
+    E.dirty_row = -1;
+    E.force_full_redraw = 1;
     strncpy(E.filepath, argv[1], sizeof(E.filepath) - 1);
 
     plat_init();
