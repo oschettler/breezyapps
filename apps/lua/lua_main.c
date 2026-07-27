@@ -366,6 +366,13 @@ int app_main(int argc, char **argv) {
 
     int rc = 0;
     if (argc >= 2) {
+        lua_newtable(L);
+        for (int i = 0; i < argc; i++) {
+            lua_pushstring(L, argv[i]);
+            lua_rawseti(L, -2, i - 1);
+        }
+        lua_setglobal(L, "arg");
+
         rc = luaL_dofile(L, argv[1]);
         if (rc != LUA_OK) {
             fprintf(stderr, "%s\n", lua_tostring(L, -1));
